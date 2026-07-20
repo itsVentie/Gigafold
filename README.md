@@ -1,70 +1,104 @@
 # Gigafold
 
-Gigafold is a high-performance, encrypted desktop vault application built with Rust and Tauri. It provides zero-knowledge cloud synchronization and a secure virtual file management interface without the need for elevated privileges or kernel-level drivers (FUSE/WinFSP). The system is architected to minimize memory overhead while maintaining strict data integrity and confidentiality.
+Gigafold is a cross-platform, ultra-high-performance zero-knowledge encrypted desktop vault application. Built entirely with Rust and Tauri, it provides secure virtual file management and seamless cloud synchronization without the operational overhead, kernel dependencies, or elevated privileges required by traditional virtual drive solutions (FUSE/WinFSP).
+
+---
 
 ## 1. System Architecture
 
-Gigafold follows a modular, decoupled design pattern separating the visual presentation layer from the high-performance security core.
+Gigafold is designed around a decoupled, event-driven architecture that separates the web-standard presentation layer from the high-throughput, memory-safe system core.
 
-### 1.1. Core Layers
 
-* **Frontend Interface (`src/`)**: A cross-platform UI built with React and TypeScript. It handles user interactions, folder navigation, and system status visualization. Communication with the backend is established via secure, asynchronous Tauri IPC bridges.
-* **Virtual Filesystem (`src-tauri/src/fs/`)**: A logical VFS layer that translates frontend actions into structural storage operations. It manages the virtual directory tree representation without mounting onto the host OS.
-* **Cryptography Engine (`src-tauri/src/crypto/`)**: Performs all client-side encryption and decryption. It handles key generation, cryptographic nonces, and authenticated encryption primitives.
-* **Storage Abstraction (`src-tauri/src/storage/`)**: Chunks data streams into fixed-size segments and interfaces with local or remote storage backends (S3, GCS, Local Filesystem) using `object_store`.
-* **Metadata Indexing (`src-tauri/src/index/`)**: Uses an embedded `sled` database to map logical file paths to encrypted chunk chains, sizes, and specific cryptographic parameters with atomic guarantees.
-* **Data Models (`src-tauri/src/models/`)**: Defines the serialized definitions for internal primitives, configuration shapes, and state tracking structures.
+```
 
-## 2. Security Design
+┌──────────────────────────────────────────────────────────────────┐
+│                      Frontend Layer (React)                      │
+└─────────────────────────────────┬────────────────────────────────┘
+│
+Tauri IPC Bridge / VFS
+│
+┌─────────────────────────────────▼────────────────────────────────┐
+│                   Storage Core Layer (Rust)                      │
+│                                                                  │
+│  ┌───────────────────────┐              ┌─────────────────────┐  │
+│  │    Crypto Pipeline    │              │   Indexing Engine   │  │
+│  │ (XChaCha20-Poly1305)  │              │    (Embedded sled)  │  │
+│  └───────────┬───────────┘              └──────────┬──────────┘  │
+└──────────────┼─────────────────────────────────────┼─────────────┘
+│                                     │
+┌──────────────▼─────────────────────────────────────▼─────────────┐
+│                      Storage Abstraction Layer                     │
+│                (object_store: Local / Cloud Blobs)               │
+└──────────────────────────────────────────────────────────────────┘
 
-Gigafold operates strictly on a zero-knowledge security boundary:
+```
 
-* **Zero-Knowledge Implementation**: All cryptographic operations occur exclusively within the client-side Rust application runtime. Storage providers only receive opaque, encrypted binary blobs and anonymous hashes.
-* **Encryption Standard**: Data payloads are encrypted using XChaCha20-Poly1305. This AEAD construction protects against both unauthorized data access and active tampering or bit-flipping attempts.
-* **Key Derivation**: Master encryption keys are derived from user-supplied passwords using the Argon2id parameter profile, establishing heavy resistance against GPU-accelerated brute-force attacks.
-* **Integrity Verification**: Each encrypted chunk carries its corresponding Poly1305 authentication tag. Any out-of-band modification results in immediate decryption failure, ensuring malicious or corrupted chunks are rejected.
+### 1.1 Core Component Layers
+*   **User Interface (`src/`):** A modern desktop interface built with React, TypeScript, and Vite. It handles directory graph traversal, interactive file operations, and real-time state synchronization, interfacing with the backend via asynchronous Tauri IPC bridges.
+*   **Virtual Filesystem (`src-tauri/src/fs/`):** A logical VFS layer that translates abstract UI interactions into transactionally sound state modifications without interacting with the OS kernel driver space.
+*   **Cryptography Pipeline (`src-tauri/src/crypto.rs`):** The cryptographic foundation handling parameter-hardened key derivation, cryptographic nonce safety, and low-level data transformation primitives.
+*   **Storage Core & Pipeline (`src-tauri/src/storage.rs`):** Exposes streaming operations using dynamic trait objects (`&mut dyn Read`) to apply authenticated encryption algorithms dynamically to arbitrarily sized IO blocks.
+*   **Metadata Indexing (`src-tauri/src/index/`):** An embedded, crash-safe `sled` key-value engine mapping user-facing virtual logical trees to deterministic cryptographically bound chunk graphs with strict ACID guarantees.
 
-## 3. Data Lifecycle & Flow
+---
 
-### Write Operations
-1. **IPC Call**: Frontend sends a file ingestion request along with the path through the Tauri bridge.
-2. **Chunking**: The storage layer splits the target file stream into uniform fixed-size chunks.
-3. **Encryption**: The crypto engine encrypts each individual chunk using XChaCha20-Poly1305 with a unique, cryptographically secure random nonce.
-4. **Index Commit**: The indexing engine saves the structural metadata (chunk hashes, nonces, sequential offsets) into the local `sled` database.
-5. **Persist**: The storage backend pushes the encrypted data segments to the defined storage provider.
+## 2. Zero-Knowledge Cryptographic Spec
 
-### Read Operations
-1. **Index Lookup**: The frontend triggers a read request. The system queries `sled` to pull the precise sequence of chunk hashes and nonces tied to the logical file.
-2. **Retrieval**: The storage engine downloads the required encrypted segments from the backend.
-3. **Decryption**: The crypto engine verifies the integrity tags and decrypts the segments back into plaintext.
-4. **Streaming**: The raw data stream is safely returned to the UI layer or exported to the local host environment.
+Gigafold guarantees absolute zero-knowledge confidentiality. The host OS and cloud storage providers read only opaque binary structures and uniform metadata markers.
 
-## 4. Technical Specifications
+*   **Key Derivation Function (KDF):** Master encryption keys are derived dynamically from user passphrases using hardware-hardened **Argon2id**. This mitigates off-chip custom ASIC/GPU massive parallel dictionary attacks through strict memory and time boundaries.
+*   **Authenticated Encryption:** Payloads undergo encryption using **XChaCha20-Poly1305** streaming profiles. The extended 192-bit nonce profile of XChaCha20 guarantees structural protection against reuse collisions across billions of generated chunks.
+*   **Integrity Verification:** Every distinct data segment features an inline Poly1305 MAC tag verified dynamically before reaching the application buffer. Any external file modification or bit-flipping attack triggers immediate decryption faults, isolating the client from corrupt data payloads.
 
-* **Language**: Rust 2021 Edition
-* **Frontend Stack**: React, TypeScript, Vite
-* **Application Shell**: Tauri v2
-* **Async Runtime**: Tokio
-* **Storage Layer**: `object_store`
-* **Local Index**: `sled` persistent key-value store
-* **Key Lifecycle**: Ephemeral; retained purely in-memory during active process sessions
+---
 
-## 5. Implementation Roadmap
+## 3. Data Flow Pipelines
 
-### Phase I: Core Cryptography & Indexing (Current)
-* Implement the Argon2id key derivation manager.
-* Finalize the XChaCha20-Poly1305 chunk encryption pipeline.
-* Integrate the embedded `sled` database schema for metadata tracking.
+### 3.1 Ingestion / Write Operations
+1.  **IPC Dispatch:** The Frontend pushes an execution payload specifying the source data pointer across the Tauri bridge boundary.
+2.  **Streaming Chunking:** The storage tier splits incoming unstructured file streams into uniform, fixed-size operational segments.
+3.  **Dynamic Transformation:** Segments run through the `ChunkEncryptor` stream engine, utilizing an automated lookahead buffer to differentiate standard blocks from the final block structure (`encrypt_next` vs `encrypt_last`).
+4.  **Transactional Indexing:** Nonces, authenticated tags, and target checksum signatures write to the local persistent `sled` engine.
+5.  **Persistence:** The abstracted `object_store` layer routes the resulting authenticated payload out to the configured target backend.
 
-### Phase II: Storage & Chunks
-* Create the fixed-size file chunking implementation.
-* Integrate the `object_store` multi-backend layer for local and initial S3 targets.
+### 3.2 Recovery / Read Operations
+1.  **Graph Target Lookup:** The Virtual Filesystem fetches the targeted chunk topology, specific sequence maps, and stored nonce arrays from `sled`.
+2.  **Parallel Egress:** The storage abstraction layer fetches corresponding encrypted data streams concurrently from the object storage targets.
+3.  **Stream Authentication:** The `ChunkEncryptor` processes raw blocks via dynamic streaming trait objects, verifying the Poly1305 integrity tags before outputting cleartext.
+4.  **IPC Return:** Cleansed plain data streams route straight back through the memory-safe IPC runtime into the frontend layout buffer.
 
-### Phase III: Tauri Integration & UI
-* Establish the complete Tauri IPC command system map.
-* Build the React virtual file navigation view.
-* Write the background synchronization worker thread for status tracking.
+---
+
+## 4. Technical Stack
+
+*   **System Core:** Rust (2021 Edition)
+*   **Runtime Framework:** Tauri v2 (Async Tokio Engine)
+*   **UI Architecture:** React, TypeScript, Vite
+*   **Database Engine:** `sled` embedded persistent key-value store
+*   **Cloud Abstraction:** `object_store` multi-backend layer
+*   **Cryptographic Primitives:** `argon2`, `chacha20poly1305` (Stream extensions enabled)
+
+---
+
+## 5. Development Roadmap
+
+### Phase I: Foundational Cryptography & Indexing (Complete ✓)
+*   [x] Architect Argon2id secure passphrase key derivation manager.
+*   [x] Build dynamic XChaCha20-Poly1305 stream-level chunk encryption pipeline.
+*   [x] Implement unified unit-testing runtime covering memory-safe cryptographic pipelines.
+
+### Phase II: Storage & Structural Indexing (In Progress ⏳)
+*   [ ] Integrate the embedded `sled` database schema to track complex multi-chunk chains.
+*   [ ] Build the fixed-size file chunking streaming split mechanics.
+*   [ ] Wire up multi-target capabilities via `object_store` (Local FS and AWS S3).
+
+### Phase III: Tauri Bridges & Virtual Frontend
+*   [ ] Map out Tauri asynchronous IPC command handlers for secure backend bridging.
+*   [ ] Develop the React file explorer tree UI.
+*   [ ] Design the background Tokio worker pool to manage vault state tracking and synchronization.
+
+---
 
 ## 6. License
 
-This project is licensed under the Apache-2.0 License.
+This project is licensed under the Apache-2.0 License. See the LICENSE file for details.
