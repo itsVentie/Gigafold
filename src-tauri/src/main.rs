@@ -3,6 +3,9 @@ mod storage;
 mod index;
 mod models;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, serde::Serialize)]
 pub struct FileEntry {
     pub name: String,
@@ -28,8 +31,18 @@ async fn get_files(path: String) -> Result<Vec<FileEntry>, String> {
 }
 
 fn main() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_files])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let mut builder = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![get_files]);
+
+    #[cfg(not(test))]
+    {
+        builder = builder.plugin(tauri_plugin_shell::init());
+        builder.run(tauri::generate_context!())
+            .expect("error while running tauri application");
+    }
+
+    #[cfg(test)]
+    {
+        let _ = builder;
+    }
 }
