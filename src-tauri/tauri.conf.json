@@ -1,0 +1,24 @@
+{
+  "productName": "gigafold",
+  "version": "0.1.0",
+  "identifier": "com.gigafold.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Gigafold",
+        "width": 800,
+        "height": 600
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
+  }
+}
